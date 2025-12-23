@@ -20,7 +20,7 @@ async def home():
 
 @auth_router.post("/create")
 async def create_account(user_schema: UserSchema, session: Session=Depends(get_session)):
-    user = session.query(User).filter(User.user_schema.email==user_schema.email).first()
+    user = session.query(User).filter(User.email==user_schema.email).first()
     if user:
         raise HTTPException(status_code=400, detail="Usuário já cadastrado.")
     else:
