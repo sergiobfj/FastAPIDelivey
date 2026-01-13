@@ -1,6 +1,6 @@
 from ctypes import sizeof
 from sqlalchemy import create_engine, Column, String, Integer, Boolean, Float, ForeignKey
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy_utils.types import ChoiceType
 
 # cria a conexão com o banco
@@ -41,11 +41,19 @@ class Order(Base):
     user = Column("user",ForeignKey("Users.id") )
     status = Column("status",String)
     price = Column("price", Float)
+    itens = relationship("ItemOrder", cascade="all, delete")
 
     def __init__(self, user, status="PENDENTE", price=0):
         self.status = status
         self.user = user
         self.price = price
+
+    def calc_price(self):
+        order_price = 0
+        for item in self.itens:
+            item_price = item.unity_price * item.quantity
+            order_price += item_price
+        self.price = order_price
 
 # order_items
 
