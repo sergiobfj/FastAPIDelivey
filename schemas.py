@@ -1,12 +1,12 @@
 from pydantic import BaseModel
-from typing import Optional
 
 class UserSchema(BaseModel):
     name: str
     email: str
     password: str
-    active: Optional[bool]
-    admin: Optional[bool]
+    admin: bool = False
+    active: bool = True
+
     
     class Config:
         from_attributes = True
@@ -28,6 +28,14 @@ class OrderItemSchema(BaseModel):
     quant: int
     flavor: str
     size: str
+    price: float
+
+    class Config:
+        from_attributes = True
+
+class ResponseOrderSchema(BaseModel):
+    id: int
+    status: str
     price: float
 
     class Config:

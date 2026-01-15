@@ -1,70 +1,135 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import HttpUrl
-from dependencies import get_session, verify_user
 from sqlalchemy.orm import Session
+from dependencies import get_session, verify_user
 from models import ItemOrder, Order, User
-from schemas import OrderSchema, OrderItemSchema
+from schemas import OrderItemSchema, ResponseOrderSchema
 
-order_router = APIRouter(prefix='/order', tags=["order"], dependencies=[Depends(verify_user)])
+order_router = APIRouter(prefix="/order", tags=["order"])
 
 
-@order_router.get('/')
+@order_router.get("/")
 async def orders():
-    """
-    Essa é a rota padrão de pedidos
-    """
-    return {"message":"Você está na rota de Pedidos"}
+    return {"message": "Você está na rota de Pedidos"}
 
-@order_router.post('/order')
-async def create_order(order_schema: OrderSchema, session: Session = Depends(get_session)):
-    new_order = Order(user=order_schema.user)
+
+@order_router.post("/")
+async def create_order(
+    session: Session = Depends(get_session),
+    user: User = Depends(verify_user)
+):
+    new_order = Order(user_id=user.id)
     session.add(new_order)
     session.commit()
-    return {'message':f'Pedido {new_order.id} criado com sucesso.'}
-
-order_router.post("/order/cancel/{order_id}")
-async def cancel_order(order_id: int, session: Session = Depends(get_session), user: User = Depends(verify_user)):
-    order = session.query(Order).filter(Order.id==order_id).first()
-
-    if not order:
-        raise HTTPException(status_code=400, detail="Pedido não encotrado.")
-    if not user.admin and user.id != order.user:
-        raise HTTPException(status_code=401, detail="Você não tem permissão para cancelar esse pedido.")
-    
-    order.status = "CANCELADO"
-    session.commit()
-    return {
-        "message": f"Pedido número: {order_id} cancelado.",
-        "order": order
-    }
+    session.refresh(new_order)
+    return {"message": f"Pedido {new_order.id} criado com sucesso."}
 
 
 @order_router.get("/list")
-async def list_order(session: Session = Depends(get_session), user: User = Depends (verify_user)):
+async def list_orders(
+    session: Session = Depends(get_session),
+    user: User = Depends(verify_user)
+):
+    print("ADMIN:", user.admin)
+
     if not user.admin:
-        raise HTTPException(status_code=401, detail='Usuário não autenticado.')
-    else:
-        orders = session.query(Order).all()
-        return {
-            "orders": orders
-        }
-    
-@order_router.post("/order/add-item/{order_id}")
-async def add_item(order_id: int, item_order_schema: OrderItemSchema, session: Session = Depends(get_session), user: User = Depends(verify_user)):
-    order = session.query(Order).filter(Order.id==order_id).first()
+        raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
+
+    orders = session.query(Order).all()
+    return {"orders": orders}
+
+
+@order_router.post("/{order_id}/add-item")
+async def add_item(
+    order_id: int,
+    item: OrderItemSchema,
+    session: Session = Depends(get_session),
+    user: User = Depends(verify_user)
+):
+    order = session.query(Order).filter(Order.id == order_id).first()
 
     if not order:
-        raise HTTPException(status_code=400, detail="Pedido não existe")
-    elif not user.admin and user.id != order.user:
-        raise HTTPException(status_code=401, detail='Usuário não autenticado.')
-    
-    item_order = ItemOrder(item_order_schema.quant, item_order_schema.flavor, item_order_schema.size, item_order_schema.price, order_id)
+        raise HTTPException(status_code=404, detail="Pedido não existe")
+
+    if not user.admin and user.id != order.user_id:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+
+    item_order = ItemOrder(
+        quantity=item.quant,
+        flavor=item.flavor,
+        size=item.size,
+        unity_price=item.price,
+        order_id=order.id
+    )
 
     session.add(item_order)
-    order.calc_price()
     session.commit()
-    return{
-        "message": "Item criado.",
-        "item_id": item_order.id,
-        "price": order.price
-    }
+
+    return {"message": "Item adicionado com sucesso"}
+
+
+@order_router.delete("/item/{item_id}")
+async def remove_item(
+    item_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(verify_user)
+):
+    item = session.query(ItemOrder).filter(ItemOrder.id == item_id).first()
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Item não existe")
+
+    order = session.query(Order).filter(Order.id == item.order_id).first()
+
+    if not user.admin and user.id != order.user_id:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+
+    session.delete(item)
+    session.commit()
+
+    return {"message": "Item removido com sucesso"}
+
+
+@order_router.post("/{order_id}/finish")
+async def finish_order(
+    order_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(verify_user)
+):
+    order = session.query(Order).filter(Order.id == order_id).first()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido não existe")
+
+    if not user.admin and user.id != order.user_id:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+
+    order.status = "FINALIZADO"
+    session.commit()
+
+    return {"message": f"Pedido {order_id} finalizado"}
+
+
+@order_router.get("/{order_id}")
+async def show_order(
+    order_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(verify_user)
+):
+    order = session.query(Order).filter(Order.id == order_id).first()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido não existe")
+
+    if not user.admin and user.id != order.user_id:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+
+    return order
+
+
+@order_router.get("/user/me", response_model=list[ResponseOrderSchema])
+async def list_user_orders(
+    session: Session = Depends(get_session),
+    user: User = Depends(verify_user)
+):
+    orders = session.query(Order).filter(Order.user_id == user.id).all()
+    return orders

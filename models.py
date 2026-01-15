@@ -1,77 +1,40 @@
-from ctypes import sizeof
-from sqlalchemy import create_engine, Column, String, Integer, Boolean, Float, ForeignKey
-from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy_utils.types import ChoiceType
+from sqlalchemy import Column, String, Integer, Boolean, Float, ForeignKey
+from sqlalchemy.orm import relationship
+from database import Base
 
-# cria a conexão com o banco
-db = create_engine("sqlite:///banco.db")
-
-# cria a base do banco de dados
-Base = declarative_base()
-
-# cria as classes/tabelas do banco
-# user
 class User(Base):
-    __tablename__ = "Users"
-    id = Column("id", Integer, primary_key=True, autoincrement=True)
-    name = Column("name", String)
-    email = Column("email", String, nullable=False)
-    password = Column("password", String)
-    active = Column("active", Boolean)
-    admin = Column("admin", Boolean, default=False)
+    __tablename__ = "users"
 
-    def __init__(self, name, email, password, active=True, admin=False):
-        self.name = name
-        self.email = email
-        self.password = password
-        self.active = active
-        self.admin = admin
-
-# order
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, unique=True, nullable=False)
+    password = Column(String, nullable=False)
+    active = Column(Boolean, default=True)
+    admin = Column(Boolean, default=False)
 
 class Order(Base):
-    __tablename__ = "Orders"
+    __tablename__ = "orders"
 
-#    STATUS_ORDERS = (
-#        ("PENDENTE","PENDENTE"),
-#        ("CANCELADO","CANCELADO"),
-#       ("FINALIZADO","FINALIZADO")
-#    )
-    id = Column("id", Integer, primary_key=True, autoincrement=True)
-    user = Column("user",ForeignKey("Users.id") )
-    status = Column("status",String)
-    price = Column("price", Float)
-    itens = relationship("ItemOrder", cascade="all, delete")
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(String, default="PENDENTE")
+    price = Column(Float, default=0)
 
-    def __init__(self, user, status="PENDENTE", price=0):
-        self.status = status
-        self.user = user
-        self.price = price
-
-    def calc_price(self):
-        order_price = 0
-        for item in self.itens:
-            item_price = item.unity_price * item.quantity
-            order_price += item_price
-        self.price = order_price
-
-# order_items
+    itens = relationship("ItemOrder", back_populates="order", cascade="all, delete-orphan")
 
 class ItemOrder(Base):
-    __tablename__ = "Items_order"
+    __tablename__ = "items_order"
 
-    id = Column("id", Integer, primary_key=True, autoincrement=True)
-    quantity = ("quantity", Integer)
-    flavor = ("flavor", String)
-    size = ("size", String)
-    unity_price = ("unity_price", Float)
-    order = ("order", ForeignKey("Orders.id"))
+    id = Column(Integer, primary_key=True)
+    quantity = Column(Integer, nullable=False)
+    flavor = Column(String, nullable=False)
+    size = Column(String, nullable=False)
+    unity_price = Column(Float, nullable=False)
 
-    def __ini__(self, quantity, flavor, size, unity_price, order):
-        self.quantity = quantity
-        self.flavor = flavor
-        self.size = size
-        self.unity_price = unity_price
-        self.order = order
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    order = relationship("Order", back_populates="itens")
 
-# executa a criação dos metadados do seu banco 
+    
+
+from database import engine
+Base.metadata.create_all(bind=engine)
